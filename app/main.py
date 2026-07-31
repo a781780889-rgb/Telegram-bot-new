@@ -13,31 +13,21 @@ from app.services.search.search_job_manager import search_job_manager
 
 async def init_db() -> None:
     async with engine.begin() as conn:
-        # Drop each table/type separately (asyncpg rejects multi-statement strings)
-        for stmt in [
-            "DROP TABLE IF EXISTS duplicate_links   CASCADE",
-            "DROP TABLE IF EXISTS duplicate_records CASCADE",
-            "DROP TABLE IF EXISTS discovered_links  CASCADE",
-            "DROP TABLE IF EXISTS links             CASCADE",
-            "DROP TABLE IF EXISTS search_jobs       CASCADE",
-            "DROP TYPE  IF EXISTS linkplatform      CASCADE",
-            "DROP TYPE  IF EXISTS linktype          CASCADE",
-            "DROP TYPE  IF EXISTS linkstatus        CASCADE",
-            "DROP TYPE  IF EXISTS searchstatus      CASCADE",
-            "DROP TYPE  IF EXISTS searchdepth       CASCADE",
-            "DROP TYPE  IF EXISTS searchplatform    CASCADE",
-            "DROP TYPE  IF EXISTS searchperiod      CASCADE",
-        ]:
-            await conn.execute(text(stmt))
-
+        # Create all tables (safe — skips existing)
         await conn.run_sync(Base.metadata.create_all)
-        # Add session_string column if missing (safe migration)
-        try:
-            await conn.execute(text(
-                "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS session_string TEXT"
-            ))
-        except Exception:
-            pass
+
+        # Safe migrations — add columns if missing
+        safe_alters = [
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS session_string TEXT",
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_connected BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'",
+            "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS last_check TIMESTAMP WITH TIME ZONE",
+        ]
+        for stmt in safe_alters:
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass
 
     logger.info("Database initialized.")
 

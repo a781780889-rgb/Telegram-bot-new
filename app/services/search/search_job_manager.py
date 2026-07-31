@@ -129,33 +129,52 @@ class SearchJobManager:
 
             # ── connect accounts ──────────────────────────────────
             clients: List[TelegramClient] = []
+            failed_accounts: List[str] = []
+
             for acc_id in (job.account_ids or []):
                 acc = await account_repo.get_by_id(acc_id)
-                if not acc or not acc.session_name:
+                if not acc:
+                    logger.warning(f"[job {job_id}] account {acc_id} not found in DB")
                     continue
-                # Use StringSession from DB (survives Railway redeploys)
-                sess = StringSession(acc.session_string or "")
-                client = TelegramClient(
-                    sess,
-                    settings.API_ID,
-                    settings.API_HASH,
-                )
+
+                # Check session_string exists before attempting connect
+                if not acc.session_string:
+                    logger.warning(
+                        f"[job {job_id}] account {acc_id} ({acc.phone}) has no session_string — "
+                        "needs re-login"
+                    )
+                    await account_repo.mark_disconnected(acc_id, "no_session")
+                    failed_accounts.append(f"{acc.phone} (يحتاج إعادة تسجيل)")
+                    continue
+
+                sess   = StringSession(acc.session_string)
+                client = TelegramClient(sess, settings.API_ID, settings.API_HASH)
                 try:
                     await client.connect()
                     if await client.is_user_authorized():
                         clients.append(client)
+                        logger.info(f"[job {job_id}] account {acc_id} ({acc.phone}) connected ✅")
                     else:
                         await client.disconnect()
-                        logger.warning(f"[job {job_id}] account {acc_id} session expired")
+                        await account_repo.mark_disconnected(acc_id, "session_expired")
+                        logger.warning(
+                            f"[job {job_id}] account {acc_id} ({acc.phone}) session expired"
+                        )
+                        failed_accounts.append(f"{acc.phone} (session منتهية — أعد تسجيل الدخول)")
                 except Exception as e:
                     logger.error(f"[job {job_id}] connect error account {acc_id}: {e}")
+                    failed_accounts.append(f"{acc.phone} (خطأ اتصال)")
 
             if not clients:
-                await search_repo.set_failed(job_id, "لا توجد حسابات نشطة ومتصلة لتنفيذ البحث")
-                await self._edit_text(
-                    chat_id, msg_id,
-                    "❌ فشل البحث: لا توجد حسابات نشطة ومتصلة.",
+                reason = "لا توجد حسابات نشطة ومتصلة لتنفيذ البحث"
+                details = "\n".join(f"• {f}" for f in failed_accounts) if failed_accounts else ""
+                err_msg = (
+                    "❌ فشل البحث: لا توجد حسابات نشطة ومتصلة.\n\n"
+                    + (f"تفاصيل:\n{details}\n\n" if details else "")
+                    + "💡 اذهب إلى إدارة الحسابات ← فحص الحسابات لإصلاح المشكلة."
                 )
+                await search_repo.set_failed(job_id, reason)
+                await self._edit_text(chat_id, msg_id, err_msg)
                 return
 
             # ── date range ────────────────────────────────────────

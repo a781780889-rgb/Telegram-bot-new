@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database.models.user import Account
@@ -17,6 +19,19 @@ class AccountRepository:
 
     async def list_by_user(self, user_id: int) -> list[Account]:
         result = await self.db.execute(select(Account).where(Account.user_id == user_id))
+        return list(result.scalars().all())
+
+    async def list_active_by_user(self, user_id: int) -> list[Account]:
+        """Return only accounts with a valid session_string."""
+        result = await self.db.execute(
+            select(Account).where(
+                Account.user_id == user_id,
+                Account.is_connected == True,
+                Account.status == "active",
+                Account.session_string != None,
+                Account.session_string != "",
+            )
+        )
         return list(result.scalars().all())
 
     async def create(
@@ -45,6 +60,15 @@ class AccountRepository:
             account.session_string = session_string
             account.status = "active"
             account.is_connected = True
+            account.last_check = datetime.now(timezone.utc)
+            await self.db.commit()
+
+    async def mark_disconnected(self, account_id: int, reason: str = "session_expired") -> None:
+        account = await self.get_by_id(account_id)
+        if account:
+            account.is_connected = False
+            account.status = reason
+            account.last_check = datetime.now(timezone.utc)
             await self.db.commit()
 
     async def delete(self, account_id: int) -> None:
