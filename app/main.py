@@ -12,9 +12,9 @@ from app.services.search.search_job_manager import search_job_manager
 
 
 async def init_db() -> None:
-    """Create all tables.  For production use Alembic migrations instead."""
+    """Create tables only if they don't exist (safe for existing DBs)."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
 
 
 async def main() -> None:
