@@ -12,30 +12,24 @@ from app.services.search.search_job_manager import search_job_manager
 
 
 async def init_db() -> None:
-    """
-    Safe DB init:
-    1. Drop search-related tables/types that may be stale from old schema.
-    2. Create all tables fresh (checkfirst=True skips existing ones).
-    """
     async with engine.begin() as conn:
-        # Drop stale tables/constraints from old schema versions
-        await conn.execute(text("""
-            DROP TABLE IF EXISTS duplicate_links   CASCADE;
-            DROP TABLE IF EXISTS duplicate_records CASCADE;
-            DROP TABLE IF EXISTS discovered_links  CASCADE;
-            DROP TABLE IF EXISTS links             CASCADE;
-            DROP TABLE IF EXISTS search_jobs       CASCADE;
-        """))
-
-        # Drop stale enum types (PostgreSQL keeps them after table drops)
-        for typ in [
-            "linkplatform", "linktype", "linkstatus",
-            "searchstatus", "searchdepth", "searchplatform", "searchperiod",
+        # Drop each table/type separately (asyncpg rejects multi-statement strings)
+        for stmt in [
+            "DROP TABLE IF EXISTS duplicate_links   CASCADE",
+            "DROP TABLE IF EXISTS duplicate_records CASCADE",
+            "DROP TABLE IF EXISTS discovered_links  CASCADE",
+            "DROP TABLE IF EXISTS links             CASCADE",
+            "DROP TABLE IF EXISTS search_jobs       CASCADE",
+            "DROP TYPE  IF EXISTS linkplatform      CASCADE",
+            "DROP TYPE  IF EXISTS linktype          CASCADE",
+            "DROP TYPE  IF EXISTS linkstatus        CASCADE",
+            "DROP TYPE  IF EXISTS searchstatus      CASCADE",
+            "DROP TYPE  IF EXISTS searchdepth       CASCADE",
+            "DROP TYPE  IF EXISTS searchplatform    CASCADE",
+            "DROP TYPE  IF EXISTS searchperiod      CASCADE",
         ]:
-            await conn.execute(text(f"DROP TYPE IF EXISTS {typ} CASCADE;"))
+            await conn.execute(text(stmt))
 
-    # Now create everything cleanly
-    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
     logger.info("Database initialized.")
