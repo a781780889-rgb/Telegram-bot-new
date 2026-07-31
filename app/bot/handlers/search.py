@@ -457,16 +457,35 @@ async def do_start(cb: types.CallbackQuery, state: FSMContext):
     # Create job in DB
     async with AsyncSessionLocal() as db:
         repo = SearchRepository(db)
+        from app.database.models.search_models import SearchPlatform, SearchDepth, SearchPeriod
+        _platform_map = {
+            "telegram": SearchPlatform.TELEGRAM,
+            "whatsapp": SearchPlatform.WHATSAPP,
+            "both":     SearchPlatform.BOTH,
+        }
+        _depth_map = {
+            "fast":   SearchDepth.FAST,
+            "normal": SearchDepth.NORMAL,
+            "deep":   SearchDepth.DEEP,
+        }
+        _period_map = {
+            "today": SearchPeriod.DAY,
+            "week":  SearchPeriod.WEEK,
+            "month": SearchPeriod.MONTH,
+            "year":  SearchPeriod.YEAR,
+            "custom":SearchPeriod.CUSTOM,
+        }
         job  = await repo.create(
             user_id=cb.from_user.id,
             account_ids=data["account_ids"],
-            platforms=data["platform"],
-            link_types=link_types,
-            search_type=data["depth"],
-            date_range=data["time_range"],
-            date_from=date_from,
-            date_to=date_to,
+            platform=_platform_map.get(data["platform"], SearchPlatform.BOTH),
+            depth=_depth_map.get(data["depth"], SearchDepth.NORMAL),
+            period=_period_map.get(data.get("time_range", "week"), SearchPeriod.WEEK),
+            link_types_config={},
             max_results=data["max_results"] or 99_999,
+            period_from=date_from,
+            period_to=date_to,
+            chat_id=cb.message.chat.id,
         )
 
     await state.set_state(SearchWizardStates.RUNNING)
@@ -577,18 +596,18 @@ async def view_job(cb: types.CallbackQuery):
         await cb.answer("⚠️ لم يتم العثور على العملية", show_alert=True)
         return
 
-    plat  = _PLATFORM_LABELS.get(job.platforms, job.platforms)
-    depth = _DEPTH_LABELS.get(job.search_type, job.search_type)
-    tr    = _TR_LABELS.get(job.date_range or "", "—")
+    plat  = _PLATFORM_LABELS.get(job.platform.value if job.platform else '', job.platform.value if job.platform else '')
+    depth = _DEPTH_LABELS.get(job.depth.value if job.depth else '', job.depth.value if job.depth else '')
+    tr    = _TR_LABELS.get(job.period.value if job.period else '' or "", "—")
     start = job.started_at.strftime("%Y-%m-%d %H:%M") if job.started_at else "—"
-    end   = job.completed_at.strftime("%H:%M") if job.completed_at else "—"
+    end   = job.finished_at.strftime("%H:%M") if job.finished_at else "—"
     dur   = ""
-    if job.started_at and job.completed_at:
-        secs = int((job.completed_at - job.started_at).total_seconds())
+    if job.started_at and job.finished_at:
+        secs = int((job.finished_at - job.started_at).total_seconds())
         dur  = f" ({secs // 60}د {secs % 60}ث)"
 
     dup_pct = (
-        round(job.duplicate_count / job.found_count * 100) if job.found_count else 0
+        round(job.found_duplicate / job.found_total * 100) if job.found_total else 0
     )
 
     text = (
@@ -600,16 +619,16 @@ async def view_job(cb: types.CallbackQuery):
         f"📅 الفترة:     {tr}\n"
         f"⏰ البداية:    {start}{dur}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📊 المكتشفة:   {job.found_count}\n"
-        f"✅ جديدة:      {job.new_count}\n"
-        f"♻️ مكررة:      {job.duplicate_count} ({dup_pct}%)\n"
-        f"❌ غير صالحة:  {job.invalid_count}\n"
+        f"📊 المكتشفة:   {job.found_total}\n"
+        f"✅ جديدة:      {job.found_new}\n"
+        f"♻️ مكررة:      {job.found_duplicate} ({dup_pct}%)\n"
+        f"❌ غير صالحة:  {job.found_invalid}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📱 Telegram:   {job.tg_count}\n"
-        f"💬 WhatsApp:   {job.wa_count}\n"
+        f"📱 Telegram:   {job.found_telegram}\n"
+        f"💬 WhatsApp:   {job.found_whatsapp}\n"
     )
-    if job.error_message:
-        text += f"\n⚠️ خطأ: {job.error_message[:200]}"
+    if job.error_log:
+        text += f"\n⚠️ خطأ: {job.error_log[:200]}"
 
     await _safe_edit(cb, text, job_detail_kb(job_id))
     await cb.answer()
