@@ -19,11 +19,18 @@ class AccountRepository:
         result = await self.db.execute(select(Account).where(Account.user_id == user_id))
         return list(result.scalars().all())
 
-    async def create(self, user_id: int, phone: str, session_name: str) -> Account:
+    async def create(
+        self,
+        user_id: int,
+        phone: str,
+        session_name: str,
+        session_string: str | None = None,
+    ) -> Account:
         account = Account(
             user_id=user_id,
             phone=phone,
             session_name=session_name,
+            session_string=session_string,
             is_connected=True,
             status="active",
         )
@@ -31,6 +38,14 @@ class AccountRepository:
         await self.db.commit()
         await self.db.refresh(account)
         return account
+
+    async def update_session_string(self, account_id: int, session_string: str) -> None:
+        account = await self.get_by_id(account_id)
+        if account:
+            account.session_string = session_string
+            account.status = "active"
+            account.is_connected = True
+            await self.db.commit()
 
     async def delete(self, account_id: int) -> None:
         account = await self.get_by_id(account_id)

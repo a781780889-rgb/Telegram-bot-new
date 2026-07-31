@@ -31,6 +31,13 @@ async def init_db() -> None:
             await conn.execute(text(stmt))
 
         await conn.run_sync(Base.metadata.create_all)
+        # Add session_string column if missing (safe migration)
+        try:
+            await conn.execute(text(
+                "ALTER TABLE accounts ADD COLUMN IF NOT EXISTS session_string TEXT"
+            ))
+        except Exception:
+            pass
 
     logger.info("Database initialized.")
 

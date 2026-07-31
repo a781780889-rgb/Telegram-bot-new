@@ -17,6 +17,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from loguru import logger
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 from app.config.config import settings
 from app.database.database import AsyncSessionLocal
@@ -132,8 +133,10 @@ class SearchJobManager:
                 acc = await account_repo.get_by_id(acc_id)
                 if not acc or not acc.session_name:
                     continue
+                # Use StringSession from DB (survives Railway redeploys)
+                sess = StringSession(acc.session_string or "")
                 client = TelegramClient(
-                    f"{_SESSION_DIR}/{acc.session_name}",
+                    sess,
                     settings.API_ID,
                     settings.API_HASH,
                 )

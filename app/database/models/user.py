@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, BigInteger, String, Boolean, DateTime, Enum, ForeignKey, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.database import Base
@@ -32,7 +32,8 @@ class Account(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, ForeignKey("users.id"))
     phone = Column(String, unique=True)
-    session_name = Column(String)
+    session_name = Column(String)           # legacy (اسم الملف القديم)
+    session_string = Column(Text, nullable=True)  # StringSession مشفرة في DB
     is_connected = Column(Boolean, default=False)
     status = Column(String, default="active")
     last_check = Column(DateTime(timezone=True))

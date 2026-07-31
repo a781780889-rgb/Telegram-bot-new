@@ -25,6 +25,7 @@ from typing import Optional
 
 from loguru import logger
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.errors import (
     ApiIdInvalidError,
     AuthRestartError,
@@ -160,8 +161,7 @@ class AccountService:
                     "❌ صيغة رقم الهاتف غير صحيحة.\nالرجاء إرساله مع رمز الدولة، مثال: +967XXXXXXXXX"
                 )
 
-            session_path = os.path.join(self.session_dir, f"pending_{user_id}")
-            client = TelegramClient(session_path, settings.API_ID, settings.API_HASH)
+            client = TelegramClient(StringSession(), settings.API_ID, settings.API_HASH)
 
             try:
                 await client.connect()
@@ -290,41 +290,32 @@ class AccountService:
         logger.info(f"user={user_id} phone={mask_phone(state.phone)} 2FA success")
         return "✅ تم تسجيل الدخول بنجاح."
 
-    async def finalize(self, user_id: int) -> tuple[str, str]:
+    async def finalize(self, user_id: int) -> tuple[str, str, str]:
         """
         Called only after a successful sign_in (with or without 2FA).
-        Renames the pending session file to its final phone-based name,
-        disconnects the client, clears the in-memory login state, and
-        returns (phone, session_name) for the caller to persist in the DB.
+        Extracts StringSession from the client (safe for DB storage),
+        disconnects, and returns (phone, session_name, session_string).
         """
         state = self._require_state(user_id)
         phone = state.phone
+
+        # Extract StringSession BEFORE disconnecting
+        try:
+            session_string = state.client.session.save()
+        except Exception as e:
+            logger.error(f"user={user_id} failed to export session string: {e}")
+            session_string = ""
 
         try:
             if state.client.is_connected():
                 await state.client.disconnect()
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"user={user_id} phone={mask_phone(phone)} error disconnecting after login: {e}")
+            logger.warning(f"user={user_id} phone={mask_phone(phone)} error disconnecting: {e}")
 
-        pending_path = os.path.join(self.session_dir, f"pending_{user_id}.session")
         safe_name = phone.replace("+", "")
-        final_name = f"{safe_name}"
-        final_path = os.path.join(self.session_dir, f"{final_name}.session")
-
-        try:
-            if os.path.exists(final_path):
-                # Never silently overwrite another account's session file.
-                final_name = f"{safe_name}_{int(time.time())}"
-                final_path = os.path.join(self.session_dir, f"{final_name}.session")
-            if os.path.exists(pending_path):
-                os.rename(pending_path, final_path)
-        except OSError as e:
-            logger.error(f"user={user_id} phone={mask_phone(phone)} failed to persist session file: {e}")
-            raise AccountServiceError("⚠️ تم تسجيل الدخول لكن تعذر حفظ الجلسة. حاول مرة أخرى.")
-
         self._logins.pop(user_id, None)
-        logger.info(f"user={user_id} phone={mask_phone(phone)} session saved as {final_name}")
-        return phone, final_name
+        logger.info(f"user={user_id} phone={mask_phone(phone)} session exported as StringSession")
+        return phone, safe_name, session_string
 
     def check_timeout(self, user_id: int) -> bool:
         """True if this user has an active login that has now timed out (state left as-is for caller to clean up)."""

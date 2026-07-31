@@ -165,7 +165,7 @@ async def cancel_login(callback: types.CallbackQuery, state: FSMContext):
 
 async def _finish_login(message: types.Message, state: FSMContext, user_id: int) -> None:
     try:
-        phone, session_name = await account_service.finalize(user_id)
+        phone, session_name, session_string = await account_service.finalize(user_id)
     except AccountServiceError as e:
         await message.answer(e.message)
         await state.clear()
@@ -180,7 +180,14 @@ async def _finish_login(message: types.Message, state: FSMContext, user_id: int)
         repo = AccountRepository(db)
         existing = await repo.get_by_phone(phone)
         if existing is None:
-            await repo.create(user_id=user_id, phone=phone, session_name=session_name)
+            await repo.create(
+                user_id=user_id,
+                phone=phone,
+                session_name=session_name,
+                session_string=session_string,
+            )
+        else:
+            await repo.update_session_string(existing.id, session_string)
 
     await state.clear()
     await message.answer(f"✅ تم تسجيل الدخول وحفظ الحساب بنجاح.\n📱 {phone}")
@@ -206,11 +213,11 @@ async def list_accounts(callback: types.CallbackQuery):
     lines = ["📋 حساباتي\n━━━━━━━━━━━━━━━━━━"]
     buttons = []
     for acc in accounts:
-        status = "✅" if acc.is_active else "❌"
+        status = "✅ نشط" if acc.status == "active" else "❌ غير نشط"
         lines.append(f"{status} {acc.phone}")
         buttons.append([
             InlineKeyboardButton(
-                text=f"{'✅' if acc.is_active else '❌'} {acc.phone}",
+                text=f"{'✅' if acc.status == 'active' else '❌'} {acc.phone}",
                 callback_data=f"accounts:detail:{acc.id}"
             )
         ])
