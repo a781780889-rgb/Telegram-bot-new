@@ -1,0 +1,272 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
+import { Globe, Bell, Lock, Database } from 'lucide-react';
+
+export default function Settings() {
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">⚙️ الإعدادات</h1>
+        <p className="text-gray-600 mt-2">إدارة تفضيلات النظام والإشعارات</p>
+      </div>
+
+      {/* Settings Tabs */}
+      <Tabs defaultValue="general" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="general" className="gap-2">
+            <Globe className="h-4 w-4" />
+            عام
+          </TabsTrigger>
+          <TabsTrigger value="search" className="gap-2">
+            البحث
+          </TabsTrigger>
+          <TabsTrigger value="notifications" className="gap-2">
+            <Bell className="h-4 w-4" />
+            الإشعارات
+          </TabsTrigger>
+          <TabsTrigger value="database" className="gap-2">
+            <Database className="h-4 w-4" />
+            قاعدة البيانات
+          </TabsTrigger>
+        </TabsList>
+
+        {/* General Settings */}
+        <TabsContent value="general" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>الإعدادات العامة</CardTitle>
+              <CardDescription>تخصيص تجربة النظام</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="language">اللغة</Label>
+                <Select defaultValue="ar">
+                  <SelectTrigger id="language">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ar">العربية</SelectItem>
+                    <SelectItem value="en">English</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="timezone">المنطقة الزمنية</Label>
+                <Select defaultValue="UTC">
+                  <SelectTrigger id="timezone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UTC">UTC</SelectItem>
+                    <SelectItem value="GMT+3">GMT+3 (الخليج)</SelectItem>
+                    <SelectItem value="GMT+2">GMT+2 (مصر)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="theme">المظهر</Label>
+                <Select defaultValue="light">
+                  <SelectTrigger id="theme">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">فاتح</SelectItem>
+                    <SelectItem value="dark">غامق</SelectItem>
+                    <SelectItem value="auto">تلقائي</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button>حفظ التغييرات</Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Search Settings */}
+        <TabsContent value="search" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>إعدادات البحث</CardTitle>
+              <CardDescription>تخصيص سلوك البحث الافتراضي</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="defaultSearchType">نوع البحث الافتراضي</Label>
+                <Select defaultValue="normal">
+                  <SelectTrigger id="defaultSearchType">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fast">سريع</SelectItem>
+                    <SelectItem value="normal">عادي</SelectItem>
+                    <SelectItem value="deep">عميق</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="defaultDateRange">النطاق الزمني الافتراضي</Label>
+                <Select defaultValue="month">
+                  <SelectTrigger id="defaultDateRange">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">آخر يوم</SelectItem>
+                    <SelectItem value="week">آخر أسبوع</SelectItem>
+                    <SelectItem value="month">آخر شهر</SelectItem>
+                    <SelectItem value="year">آخر سنة</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="maxResults">الحد الأقصى للنتائج</Label>
+                <Select defaultValue="1000">
+                  <SelectTrigger id="maxResults">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
+                    <SelectItem value="1000">1000</SelectItem>
+                    <SelectItem value="5000">5000</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="duplicateDetection">كشف التكرار</Label>
+                  <Switch id="duplicateDetection" defaultChecked />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="urlNormalization">تطبيع الروابط</Label>
+                  <Switch id="urlNormalization" defaultChecked />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="separateByPlatform">فصل النتائج حسب المنصة</Label>
+                  <Switch id="separateByPlatform" defaultChecked />
+                </div>
+              </div>
+
+              <Button>حفظ التغييرات</Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Notifications */}
+        <TabsContent value="notifications" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>الإشعارات</CardTitle>
+              <CardDescription>إدارة الإشعارات التلقائية</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="searchCompleted">اكتمال عملية البحث</Label>
+                  <p className="text-sm text-gray-500">إخطار عند انتهاء عملية البحث</p>
+                </div>
+                <Switch id="searchCompleted" defaultChecked />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="largeDiscovery">اكتشاف عدد كبير من الروابط</Label>
+                  <p className="text-sm text-gray-500">إخطار عند اكتشاف أكثر من 1000 رابط</p>
+                </div>
+                <Switch id="largeDiscovery" defaultChecked />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="searchError">خطأ في البحث</Label>
+                  <p className="text-sm text-gray-500">إخطار عند حدوث خطأ في عملية البحث</p>
+                </div>
+                <Switch id="searchError" defaultChecked />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="accountError">خطأ في الحساب</Label>
+                  <p className="text-sm text-gray-500">إخطار عند حدوث خطأ في أحد الحسابات</p>
+                </div>
+                <Switch id="accountError" defaultChecked />
+              </div>
+
+              <Button>حفظ التغييرات</Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Database */}
+        <TabsContent value="database" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>قاعدة البيانات</CardTitle>
+              <CardDescription>معلومات وإدارة قاعدة البيانات</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">حالة الاتصال</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 bg-green-500 rounded-full"></div>
+                      <span className="text-sm font-medium">متصل</span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">عدد السجلات</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">12,450</div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">حجم قاعدة البيانات</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">45.2 MB</div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">آخر نسخة احتياطية</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm">اليوم الساعة 3:00 ص</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-2">
+                <Button variant="outline" className="w-full">
+                  💾 إنشاء نسخة احتياطية الآن
+                </Button>
+                <Button variant="outline" className="w-full">
+                  📥 تحميل نسخة احتياطية
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

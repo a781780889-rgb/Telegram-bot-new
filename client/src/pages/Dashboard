@@ -1,0 +1,252 @@
+import { useEffect, useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Spinner } from '@/components/ui/spinner';
+import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Link2, MessageSquare, TrendingUp, Clock } from 'lucide-react';
+
+const COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b'];
+
+export default function Dashboard() {
+  const { data: stats, isLoading, error } = trpc.links.getStatistics.useQuery();
+  const [chartData, setChartData] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (stats) {
+      // Prepare chart data
+      setChartData([
+        { name: 'New', value: (stats as any).totalNew || 0 },
+        { name: 'Duplicate', value: (stats as any).totalDuplicate || 0 },
+      ]);
+    }
+  }, [stats]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-900">خطأ</CardTitle>
+            <CardDescription className="text-red-700">
+              فشل تحميل الإحصائيات
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">لوحة التحكم</h1>
+        <p className="text-gray-600 mt-2">مرحباً بك في نظام إدارة الروابط</p>
+      </div>
+
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Links */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">إجمالي الروابط</CardTitle>
+            <Link2 className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.totalLinks || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">
+              {stats?.telegramLinks || 0} تليجرام • {stats?.whatsappLinks || 0} واتس
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* New Links */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">جديدة اليوم</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.newLinksToday || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">
+              هذا الأسبوع: {stats?.newLinksThisWeek || 0}
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Duplicates */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">روابط مكررة</CardTitle>
+            <MessageSquare className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.duplicateCount || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">
+              نسبة التكرار: {stats?.duplicatePercentage || 0}%
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Search Stats */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">عمليات البحث</CardTitle>
+            <Clock className="h-4 w-4 text-purple-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.totalSearches || 0}</div>
+            <p className="text-xs text-gray-500 mt-1">
+              نشطة: {stats?.activeSearches || 0}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">نظرة عامة</TabsTrigger>
+          <TabsTrigger value="platforms">المنصات</TabsTrigger>
+          <TabsTrigger value="types">الأنواع</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>جديدة مقابل مكررة</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={chartData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="platforms" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>توزيع المنصات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart
+                  data={[
+                    {
+                      name: 'Telegram',
+                      value: stats?.telegramLinks || 0,
+                    },
+                    {
+                      name: 'WhatsApp',
+                      value: stats?.whatsappLinks || 0,
+                    },
+                  ]}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#3b82f6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="types" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>أنواع Telegram</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>مجموعات عامة:</span>
+                    <span className="font-bold">{stats?.telegramPublicGroups || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>مجموعات خاصة:</span>
+                    <span className="font-bold">{stats?.telegramPrivateGroups || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>قنوات:</span>
+                    <span className="font-bold">{stats?.telegramChannels || 0}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>أنواع WhatsApp</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>مجموعات:</span>
+                    <span className="font-bold">{stats?.whatsappGroups || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>قنوات:</span>
+                    <span className="font-bold">{stats?.whatsappChannels || 0}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Recent Activity */}
+      <Card>
+        <CardHeader>
+          <CardTitle>ملخص النشاط</CardTitle>
+          <CardDescription>آخر الأنشطة في النظام</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+              <span className="text-sm">روابط جديدة هذا الشهر</span>
+              <span className="font-bold text-lg">{stats?.newLinksThisMonth || 0}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+              <span className="text-sm">إجمالي الروابط المكررة</span>
+              <span className="font-bold text-lg">{stats?.duplicateCount || 0}</span>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-sm">عمليات بحث مكتملة</span>
+              <span className="font-bold text-lg">{stats?.completedSearches || 0}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

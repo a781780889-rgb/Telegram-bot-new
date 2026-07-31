@@ -1,0 +1,232 @@
+import { useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Spinner } from '@/components/ui/spinner';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Download, Search, Filter } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const platformColors: Record<string, string> = {
+  telegram: 'bg-blue-100 text-blue-800',
+  whatsapp: 'bg-green-100 text-green-800',
+};
+
+const linkTypeLabels: Record<string, string> = {
+  public_group: 'مجموعة عامة',
+  private_group: 'مجموعة خاصة',
+  channel: 'قناة',
+  group: 'مجموعة',
+  unknown: 'غير معروف',
+};
+
+export default function LinksDatabase() {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [platform, setPlatform] = useState<'telegram' | 'whatsapp' | undefined>();
+  const [offset, setOffset] = useState(0);
+  const limit = 50;
+
+  const { data: linksData, isLoading: isLoadingLinks } = trpc.links.getLinks.useQuery(
+    {
+      platform,
+      limit,
+      offset,
+    },
+    { enabled: !searchQuery }
+  );
+
+  const { data: searchData, isLoading: isLoadingSearch } = trpc.links.searchLinks.useQuery(
+    {
+      query: searchQuery,
+      platform,
+      limit,
+      offset: 0,
+    },
+    { enabled: !!searchQuery }
+  );
+
+  const exportLinks = trpc.links.exportLinks.useQuery(
+    { platform, format: 'csv' },
+    { enabled: false }
+  );
+
+  const isLoading = isLoadingLinks || isLoadingSearch;
+  const links = searchQuery ? searchData?.links : linksData?.links;
+  const total = searchQuery ? searchData?.total : linksData?.total;
+
+  const handleExport = async () => {
+    try {
+      const result = await exportLinks.refetch();
+      if (result.data) {
+        const blob = new Blob([result.data.content], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = result.data.filename;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Error exporting:', error);
+    }
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">قاعدة بيانات الروابط</h1>
+          <p className="text-gray-600 mt-2">البحث والفلترة على جميع الروابط المكتشفة</p>
+        </div>
+        <Button className="gap-2" onClick={handleExport} disabled={exportLinks.isLoading}>
+          <Download className="h-4 w-4" />
+          {exportLinks.isLoading ? 'جاري التصدير...' : 'تصدير CSV'}
+        </Button>
+      </div>
+
+      {/* Search and Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">البحث والفلترة</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="ابحث عن رابط أو اسم مستخدم..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setOffset(0);
+                }}
+                className="pl-10"
+              />
+            </div>
+            <Select
+              value={platform || ''}
+              onValueChange={(value) => {
+                setPlatform(value as 'telegram' | 'whatsapp' | undefined);
+                setOffset(0);
+              }}
+            >
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="جميع المنصات" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">جميع المنصات</SelectItem>
+                <SelectItem value="telegram">Telegram</SelectItem>
+                <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Links Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">
+            الروابط ({total || 0})
+          </CardTitle>
+          <CardDescription>
+            {searchQuery ? `نتائج البحث عن "${searchQuery}"` : 'جميع الروابط المكتشفة'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Spinner />
+            </div>
+          ) : links && links.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>المنصة</TableHead>
+                    <TableHead>النوع</TableHead>
+                    <TableHead>الرابط</TableHead>
+                    <TableHead>اسم المستخدم</TableHead>
+                    <TableHead>تاريخ الاكتشاف</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {links.map((link) => (
+                    <TableRow key={link.id}>
+                      <TableCell>
+                        <Badge className={platformColors[link.platform]}>
+                          {link.platform === 'telegram' ? 'Telegram' : 'WhatsApp'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm">{linkTypeLabels[link.linkType]}</span>
+                      </TableCell>
+                      <TableCell>
+                        <a
+                          href={link.normalizedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline truncate max-w-xs"
+                        >
+                          {link.normalizedUrl}
+                        </a>
+                      </TableCell>
+                      <TableCell>{link.username || '-'}</TableCell>
+                      <TableCell>
+                        {link.firstSeenAt
+                          ? new Date(link.firstSeenAt).toLocaleDateString('ar-SA')
+                          : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Filter className="h-12 w-12 text-gray-300 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900">لا توجد روابط</h3>
+              <p className="text-gray-600 mt-2">حاول تغيير معايير البحث</p>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {links && links.length > 0 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <span className="text-sm text-gray-600">
+                عرض {offset + 1} إلى {Math.min(offset + limit, total || 0)} من {total || 0}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOffset(Math.max(0, offset - limit))}
+                  disabled={offset === 0}
+                >
+                  السابق
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOffset(offset + limit)}
+                  disabled={!links || offset + limit >= (total || 0)}
+                >
+                  التالي
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

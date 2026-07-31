@@ -1,0 +1,475 @@
+import { useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Input } from '@/components/ui/input';
+import { ChevronRight, ChevronLeft, Zap, Search, Brain } from 'lucide-react';
+import { useLocation } from 'wouter';
+
+type SearchStep = 'accounts' | 'platforms' | 'searchType' | 'dateRange' | 'settings' | 'confirm';
+
+interface SearchFormData {
+  accountIds: number[];
+  platforms: 'telegram' | 'whatsapp' | 'both';
+  telegramTypes: string[];
+  whatsappTypes: string[];
+  searchType: 'fast' | 'normal' | 'deep';
+  dateRange: 'today' | 'week' | 'month' | 'year' | 'custom';
+  startDate?: Date;
+  endDate?: Date;
+  maxResults: number;
+  removeDuplicates: boolean;
+  compareWithDb: boolean;
+  saveNewResults: boolean;
+  ignoreInvalid: boolean;
+  separateByPlatform: boolean;
+}
+
+export default function NewSearch() {
+  const [, navigate] = useLocation();
+  const [currentStep, setCurrentStep] = useState<SearchStep>('accounts');
+  const [formData, setFormData] = useState<SearchFormData>({
+    accountIds: [],
+    platforms: 'both',
+    telegramTypes: [],
+    whatsappTypes: [],
+    searchType: 'normal',
+    dateRange: 'month',
+    maxResults: 1000,
+    removeDuplicates: true,
+    compareWithDb: true,
+    saveNewResults: true,
+    ignoreInvalid: true,
+    separateByPlatform: true,
+  });
+
+  const { data: accounts } = trpc.accounts.getAccounts.useQuery();
+  const createSearch = trpc.searches.createSearch.useMutation();
+  const [showConfirm, setShowConfirm] = useState(false);
+
+  const handleAccountToggle = (id: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      accountIds: prev.accountIds.includes(id)
+        ? prev.accountIds.filter((aid) => aid !== id)
+        : [...prev.accountIds, id],
+    }));
+  };
+
+  const handleSelectAll = () => {
+    if (accounts) {
+      setFormData((prev) => ({
+        ...prev,
+        accountIds: accounts.map((a) => a.id),
+      }));
+    }
+  };
+
+  const handleDeselectAll = () => {
+    setFormData((prev) => ({
+      ...prev,
+      accountIds: [],
+    }));
+  };
+
+  const handleNext = () => {
+    const steps: SearchStep[] = ['accounts', 'platforms', 'searchType', 'dateRange', 'settings', 'confirm'];
+    const currentIndex = steps.indexOf(currentStep);
+    if (currentIndex < steps.length - 1) {
+      setCurrentStep(steps[currentIndex + 1]);
+    }
+  };
+
+  const handlePrev = () => {
+    const steps: SearchStep[] = ['accounts', 'platforms', 'searchType', 'dateRange', 'settings', 'confirm'];
+    const currentIndex = steps.indexOf(currentStep);
+    if (currentIndex > 0) {
+      setCurrentStep(steps[currentIndex - 1]);
+    }
+  };
+
+  const handleStartSearch = async () => {
+    try {
+      const search = await createSearch.mutateAsync({
+        platforms: formData.platforms,
+        searchType: formData.searchType,
+        dateRange: formData.dateRange,
+        accountIds: formData.accountIds,
+        maxResults: formData.maxResults,
+        settings: {
+          telegramTypes: formData.telegramTypes,
+          whatsappTypes: formData.whatsappTypes,
+        },
+      });
+      navigate(`/search/${search.id}`, { replace: true });
+    } catch (error) {
+      console.error('Error creating search:', error);
+    }
+  };
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">🔎 إنشاء عملية بحث جديدة</h1>
+        <p className="text-gray-600 mt-2">اتبع الخطوات لإعداد عملية البحث</p>
+      </div>
+
+      {/* Progress */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'accounts' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>1</div>
+            <div className="flex-1 h-1 mx-2 bg-gray-200"></div>
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'platforms' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>2</div>
+            <div className="flex-1 h-1 mx-2 bg-gray-200"></div>
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'searchType' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>3</div>
+            <div className="flex-1 h-1 mx-2 bg-gray-200"></div>
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'dateRange' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>4</div>
+            <div className="flex-1 h-1 mx-2 bg-gray-200"></div>
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'settings' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>5</div>
+            <div className="flex-1 h-1 mx-2 bg-gray-200"></div>
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${currentStep === 'confirm' ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}>6</div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Step Content */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {currentStep === 'accounts' && 'الخطوة 1: تحديد الحسابات'}
+            {currentStep === 'platforms' && 'الخطوة 2: تحديد المنصات'}
+            {currentStep === 'searchType' && 'الخطوة 3: نوع البحث'}
+            {currentStep === 'dateRange' && 'الخطوة 4: نطاق التاريخ'}
+            {currentStep === 'settings' && 'الخطوة 5: الإعدادات'}
+            {currentStep === 'confirm' && 'الخطوة 6: تأكيد البحث'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Step 1: Accounts */}
+          {currentStep === 'accounts' && (
+            <div className="space-y-4">
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                  تحديد الكل
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDeselectAll}>
+                  إلغاء التحديد
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {accounts?.map((account) => (
+                  <div key={account.id} className="flex items-center space-x-2 p-3 border rounded">
+                    <Checkbox
+                      id={`account-${account.id}`}
+                      checked={formData.accountIds.includes(account.id)}
+                      onCheckedChange={() => handleAccountToggle(account.id)}
+                    />
+                    <Label htmlFor={`account-${account.id}`} className="flex-1 cursor-pointer">
+                      <div className="font-medium">{account.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {account.platform === 'telegram' ? 'Telegram' : 'WhatsApp'} • {account.username || 'بدون اسم'}
+                      </div>
+                    </Label>
+                    <Badge variant="outline">{account.status}</Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Platforms */}
+          {currentStep === 'platforms' && (
+            <div className="space-y-4">
+              <RadioGroup
+                value={formData.platforms}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    platforms: value as 'telegram' | 'whatsapp' | 'both',
+                  }))
+                }
+              >
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="telegram" id="telegram" />
+                  <Label htmlFor="telegram" className="flex-1 cursor-pointer">
+                    <div className="font-medium">Telegram فقط</div>
+                    <div className="text-sm text-gray-500">مجموعات عامة وخاصة وقنوات</div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="whatsapp" id="whatsapp" />
+                  <Label htmlFor="whatsapp" className="flex-1 cursor-pointer">
+                    <div className="font-medium">WhatsApp فقط</div>
+                    <div className="text-sm text-gray-500">مجموعات وقنوات</div>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="both" id="both" />
+                  <Label htmlFor="both" className="flex-1 cursor-pointer">
+                    <div className="font-medium">Telegram + WhatsApp</div>
+                    <div className="text-sm text-gray-500">البحث في كلا المنصتين</div>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
+
+          {/* Step 3: Search Type */}
+          {currentStep === 'searchType' && (
+            <div className="space-y-4">
+              <RadioGroup
+                value={formData.searchType}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    searchType: value as 'fast' | 'normal' | 'deep',
+                  }))
+                }
+              >
+                <div className="flex items-start space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="fast" id="fast" className="mt-1" />
+                  <Label htmlFor="fast" className="flex-1 cursor-pointer">
+                    <div className="font-medium flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      بحث سريع
+                    </div>
+                    <div className="text-sm text-gray-500">سرعة أعلى — نطاق بحث أقل</div>
+                  </Label>
+                </div>
+                <div className="flex items-start space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="normal" id="normal" className="mt-1" />
+                  <Label htmlFor="normal" className="flex-1 cursor-pointer">
+                    <div className="font-medium flex items-center gap-2">
+                      <Search className="h-4 w-4" />
+                      بحث عادي
+                    </div>
+                    <div className="text-sm text-gray-500">توازن بين السرعة والشمول</div>
+                  </Label>
+                </div>
+                <div className="flex items-start space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="deep" id="deep" className="mt-1" />
+                  <Label htmlFor="deep" className="flex-1 cursor-pointer">
+                    <div className="font-medium flex items-center gap-2">
+                      <Brain className="h-4 w-4" />
+                      بحث عميق
+                    </div>
+                    <div className="text-sm text-gray-500">بحث أوسع وأكثر شمولاً وقد يستغرق وقتاً أطول</div>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
+
+          {/* Step 4: Date Range */}
+          {currentStep === 'dateRange' && (
+            <div className="space-y-4">
+              <RadioGroup
+                value={formData.dateRange}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    dateRange: value as any,
+                  }))
+                }
+              >
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="today" id="today" />
+                  <Label htmlFor="today" className="flex-1 cursor-pointer">آخر يوم</Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="week" id="week" />
+                  <Label htmlFor="week" className="flex-1 cursor-pointer">آخر أسبوع</Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="month" id="month" />
+                  <Label htmlFor="month" className="flex-1 cursor-pointer">آخر شهر</Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="year" id="year" />
+                  <Label htmlFor="year" className="flex-1 cursor-pointer">آخر سنة</Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded">
+                  <RadioGroupItem value="custom" id="custom" />
+                  <Label htmlFor="custom" className="flex-1 cursor-pointer">تحديد يدوي</Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
+
+          {/* Step 5: Settings */}
+          {currentStep === 'settings' && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="maxResults">الحد الأقصى للنتائج</Label>
+                <Input
+                  id="maxResults"
+                  type="number"
+                  value={formData.maxResults}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      maxResults: parseInt(e.target.value),
+                    }))
+                  }
+                  className="mt-2"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="removeDuplicates"
+                    checked={formData.removeDuplicates}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        removeDuplicates: checked as boolean,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="removeDuplicates" className="cursor-pointer">
+                    إزالة التكرار
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="compareWithDb"
+                    checked={formData.compareWithDb}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        compareWithDb: checked as boolean,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="compareWithDb" className="cursor-pointer">
+                    مقارنة النتائج مع قاعدة البيانات
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="ignoreInvalid"
+                    checked={formData.ignoreInvalid}
+                    onCheckedChange={(checked) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        ignoreInvalid: checked as boolean,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="ignoreInvalid" className="cursor-pointer">
+                    تجاهل الروابط غير الصالحة
+                  </Label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 6: Confirm */}
+          {currentStep === 'confirm' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">الحسابات</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formData.accountIds.length}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">المنصات</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm">
+                      {formData.platforms === 'both'
+                        ? 'Telegram + WhatsApp'
+                        : formData.platforms === 'telegram'
+                          ? 'Telegram'
+                          : 'WhatsApp'}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">نوع البحث</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Badge>
+                      {formData.searchType === 'fast'
+                        ? 'سريع'
+                        : formData.searchType === 'normal'
+                          ? 'عادي'
+                          : 'عميق'}
+                    </Badge>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">النطاق الزمني</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-sm">
+                      {formData.dateRange === 'today'
+                        ? 'آخر يوم'
+                        : formData.dateRange === 'week'
+                          ? 'آخر أسبوع'
+                          : formData.dateRange === 'month'
+                            ? 'آخر شهر'
+                            : 'آخر سنة'}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Navigation */}
+      <div className="flex gap-2 justify-between">
+        <Button
+          variant="outline"
+          onClick={handlePrev}
+          disabled={currentStep === 'accounts'}
+          className="gap-2"
+        >
+          <ChevronRight className="h-4 w-4" />
+          السابق
+        </Button>
+
+        {currentStep !== 'confirm' ? (
+          <Button onClick={handleNext} className="gap-2">
+            التالي
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button
+            onClick={handleStartSearch}
+            disabled={createSearch.isPending}
+            className="gap-2"
+          >
+            {createSearch.isPending ? (
+              <>
+                <Spinner className="h-4 w-4" />
+                جاري البدء...
+              </>
+            ) : (
+              <>
+                🚀 بدء البحث
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
