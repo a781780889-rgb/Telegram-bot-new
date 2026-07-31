@@ -6,23 +6,33 @@ from app.config.config import settings
 
 router = Router()
 
+# Sections that have dedicated handlers in other routers.
+# They must NOT be caught by the generic handler below.
+_DEDICATED = frozenset({"search"})
+
 SECTION_TITLES = {
-    "links": "🔗 الروابط",
-    "search": "🔍 البحث",
-    "folders": "📁 المجلدات",
-    "publishing": "🚀 محرك النشر",
-    "stats": "📊 الإحصائيات",
-    "subs": "💎 الاشتراكات",
-    "settings": "⚙️ الإعدادات",
-    "help": "❓ المساعدة",
+    "links":       "🔗 الروابط",
+    "folders":     "📁 المجلدات",
+    "publishing":  "🚀 محرك النشر",
+    "stats":       "📊 الإحصائيات",
+    "subs":        "💎 الاشتراكات",
+    "settings":    "⚙️ الإعدادات",
+    "help":        "❓ المساعدة",
 }
 
 
 @router.callback_query(F.data.startswith("menu:"))
 async def generic_menu_handler(callback: types.CallbackQuery):
     section_key = callback.data.split(":", 1)[1]
-    title = SECTION_TITLES.get(section_key, "هذا القسم")
 
+    # Dedicated handlers are registered in their own routers which are
+    # included BEFORE this router, so they will already have handled the
+    # callback. This guard is a safety net in case order is ever changed.
+    if section_key in _DEDICATED:
+        await callback.answer()
+        return
+
+    title = SECTION_TITLES.get(section_key, "هذا القسم")
     await callback.message.edit_text(
         f"{title}\n\n🛠️ هذه الميزة قيد التطوير حالياً وسيتم تفعيلها قريباً.",
         reply_markup=get_back_button("main"),

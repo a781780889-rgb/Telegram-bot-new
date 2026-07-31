@@ -8,31 +8,20 @@ class RegistrationStates(StatesGroup):
 
 
 class SearchWizardStates(StatesGroup):
-    """
-    Multi-step search wizard.
-    State data keys (all stored in FSM context):
-      selected_accounts  : list[int]         — account IDs
-      platform           : str               — "tg" | "wa" | "bo"
-      link_types         : dict[str, bool]   — per-type toggle flags
-      depth              : str               — "fa" | "no" | "de"
-      period             : str               — "dy"|"wk"|"mn"|"yr"|"cu"
-      date_from          : str | None        — ISO date string (custom period)
-      date_to            : str | None        — ISO date string (custom period)
-    """
-
-    SELECTING_ACCOUNTS = State()   # Step 1
-    SELECTING_PLATFORM = State()   # Step 2
-    SELECTING_TYPES    = State()   # Step 3
-    SELECTING_DEPTH    = State()   # Step 4
-    SELECTING_PERIOD   = State()   # Step 5
-    CUSTOM_DATE_FROM   = State()   # Step 5b (text input)
-    CUSTOM_DATE_TO     = State()   # Step 5c (text input)
-    CONFIRMING         = State()   # Step 6
-    RUNNING            = State()   # Job is live
+    """Multi-step search wizard."""
+    SELECTING_ACCOUNTS   = State()
+    SELECTING_PLATFORM   = State()
+    SELECTING_LINK_TYPE  = State()
+    SELECTING_DEPTH      = State()
+    SELECTING_TIME_RANGE = State()
+    CUSTOM_DATE_FROM     = State()   # text input – date "from"
+    CUSTOM_DATE_TO       = State()   # text input – date "to"
+    SELECTING_MAX_RESULTS = State()
+    CONFIRMING           = State()
+    RUNNING              = State()
 
 
-# ── legacy (kept for compatibility with any existing imports) ─────────────
-
+# Keep old names for backward compatibility with any existing references
 class SearchStates(StatesGroup):
     SELECTING_ACCOUNTS = State()
     SELECTING_TYPE     = State()
@@ -40,6 +29,6 @@ class SearchStates(StatesGroup):
 
 
 class PublishStates(StatesGroup):
-    SELECTING_CONTENT = State()
-    SELECTING_TARGETS = State()
+    SELECTING_CONTENT  = State()
+    SELECTING_TARGETS  = State()
     WAITING_FOR_SCHEDULE = State()
