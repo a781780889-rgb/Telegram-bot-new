@@ -1,245 +1,221 @@
-"""Keyboard builders for the Search wizard."""
+"""
+Search wizard keyboards.
+
+Callback-data scheme (kept under 64 bytes each):
+  s:ac:t:{id}   toggle account id
+  s:ac:all      select all accounts
+  s:ac:nn       deselect all
+  s:ac:nx       proceed from accounts step
+  s:pl:{val}    select platform (tg/wa/bo)
+  s:pl:nx       proceed from platform
+  s:lt:t:{key}  toggle link-type checkbox
+  s:lt:nx       proceed from link-types
+  s:dp:{val}    select depth (fa/no/de)
+  s:dp:nx       proceed from depth
+  s:pd:{val}    select period (dy/wk/mn/yr/cu)
+  s:pd:nx       proceed from period
+  s:cf          confirm and start
+  s:cx          cancel wizard
+  s:ps:{id}     pause running job
+  s:rs:{id}     resume paused job
+  s:st:{id}     stop job
+  s:ex:tg:{id}  export Telegram links
+  s:ex:wa:{id}  export WhatsApp links
+  s:ex:al:{id}  export all links
+"""
+
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-# ── entry ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Step 1 — Account selection
+# ──────────────────────────────────────────────────────────────────────────
 
-def search_main_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🔍 بحث جديد",        callback_data="srch:new"),
-            InlineKeyboardButton(text="📋 سجل البحث",       callback_data="srch:history"),
-        ],
-        [
-            InlineKeyboardButton(text="📊 إحصائيات الروابط", callback_data="srch:stats"),
-            InlineKeyboardButton(text="🔗 قاعدة الروابط",   callback_data="srch:database"),
-        ],
-        [InlineKeyboardButton(text="⬅️ رجوع", callback_data="back:main")],
-    ])
-
-
-# ── wizard step 1: account selection ──────────────────────────────────
-
-def accounts_kb(accounts: List[Dict], selected: List[int]) -> InlineKeyboardMarkup:
+def accounts_keyboard(
+    accounts: list,          # List[Account]
+    selected_ids: Set[int],
+) -> InlineKeyboardMarkup:
     rows = []
     for acc in accounts:
-        acc_id = acc["id"]
-        phone  = acc.get("phone", "")
-        masked = f"{phone[:4]}***{phone[-4:]}" if len(phone) >= 8 else phone
-        ok_ico = "🟢" if acc.get("is_connected") else "🔴"
-        chk    = "✅ " if acc_id in selected else "⬜ "
-        rows.append([
-            InlineKeyboardButton(
-                text=f"{chk}{ok_ico} {masked}",
-                callback_data=f"srch:toggle_acc:{acc_id}",
-            )
-        ])
+        tick   = "✅" if acc.id in selected_ids else "☐"
+        status = "🟢" if acc.is_connected else "🔴"
+        label  = f"{tick} {status} {acc.phone or acc.session_name}"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"s:ac:t:{acc.id}")])
 
     rows.append([
-        InlineKeyboardButton(text="✅ تحديد الكل",  callback_data="srch:select_all"),
-        InlineKeyboardButton(text="⬛ إلغاء الكل",  callback_data="srch:deselect_all"),
+        InlineKeyboardButton(text="✔️ تحديد الكل",      callback_data="s:ac:all"),
+        InlineKeyboardButton(text="✘ إلغاء الكل",       callback_data="s:ac:nn"),
     ])
     rows.append([
-        InlineKeyboardButton(text="❌ إلغاء",        callback_data="srch:cancel"),
-        InlineKeyboardButton(text="التالي ➡️",       callback_data="srch:go:platform"),
+        InlineKeyboardButton(text="❌ إلغاء",            callback_data="s:cx"),
+        InlineKeyboardButton(text="التالي ➡️",           callback_data="s:ac:nx"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── wizard step 2: platform ────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Step 2 — Platform
+# ──────────────────────────────────────────────────────────────────────────
 
-def platform_kb(selected: str = "both") -> InlineKeyboardMarkup:
-    def dot(v): return "🔵 " if selected == v else "⚪ "
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{dot('telegram')}📱 Telegram فقط",
-                              callback_data="srch:set_platform:telegram")],
-        [InlineKeyboardButton(text=f"{dot('whatsapp')}💬 WhatsApp فقط",
-                              callback_data="srch:set_platform:whatsapp")],
-        [InlineKeyboardButton(text=f"{dot('both')}📱💬 Telegram + WhatsApp",
-                              callback_data="srch:set_platform:both")],
-        [
-            InlineKeyboardButton(text="⬅️ السابق", callback_data="srch:go:accounts"),
-            InlineKeyboardButton(text="التالي ➡️", callback_data="srch:go:link_types"),
-        ],
+_PLATFORMS = [
+    ("tg",  "📱 Telegram فقط"),
+    ("wa",  "💬 WhatsApp فقط"),
+    ("bo",  "📱💬 Telegram + WhatsApp"),
+]
+
+
+def platform_keyboard(selected: str) -> InlineKeyboardMarkup:
+    rows = []
+    for val, label in _PLATFORMS:
+        tick = "🔘" if selected == val else "⚪"
+        rows.append([InlineKeyboardButton(text=f"{tick} {label}", callback_data=f"s:pl:{val}")])
+
+    rows.append([
+        InlineKeyboardButton(text="⬅️ رجوع",  callback_data="s:bk:1"),
+        InlineKeyboardButton(text="التالي ➡️", callback_data="s:pl:nx"),
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── wizard step 3: link types ──────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Step 3 — Link types
+# ──────────────────────────────────────────────────────────────────────────
 
-def link_types_kb(
-    platform: str,
-    tg_types: List[str],
-    wa_types: List[str],
+_TG_LINK_TYPES = [
+    ("tg_groups",   "👥 مجموعات Telegram العامة"),
+    ("tg_channels", "📢 قنوات Telegram"),
+    ("tg_private",  "🔒 مجموعات Telegram الخاصة"),
+]
+
+_WA_LINK_TYPES = [
+    ("wa_groups",   "👥 مجموعات WhatsApp"),
+    ("wa_channels", "📢 قنوات WhatsApp"),
+]
+
+
+def link_types_keyboard(
+    platform: str,           # "tg" | "wa" | "bo"
+    selected: Dict[str, bool],
 ) -> InlineKeyboardMarkup:
     rows = []
 
-    if platform in ("telegram", "both"):
-        rows.append([InlineKeyboardButton(text="📱 Telegram", callback_data="srch:noop")])
-        all_tg = {"tg_public_group", "tg_channel", "tg_private_group"}
-        for val, label in [
-            ("tg_public_group",  "👥 مجموعات عامة"),
-            ("tg_channel",       "📢 قنوات"),
-            ("tg_private_group", "🔒 مجموعات خاصة"),
-        ]:
-            chk = "✅ " if val in tg_types else "⬜ "
-            rows.append([InlineKeyboardButton(
-                text=f"{chk}{label}", callback_data=f"srch:toggle_tg:{val}"
-            )])
-        tg_all_chk = "☑️" if all_tg.issubset(tg_types) else "⬜"
-        rows.append([InlineKeyboardButton(
-            text=f"{tg_all_chk} كل أنواع Telegram", callback_data="srch:tg_all"
-        )])
+    types_to_show = []
+    if platform in ("tg", "bo"):
+        types_to_show.extend(_TG_LINK_TYPES)
+    if platform in ("wa", "bo"):
+        types_to_show.extend(_WA_LINK_TYPES)
 
-    if platform in ("whatsapp", "both"):
-        rows.append([InlineKeyboardButton(text="💬 WhatsApp", callback_data="srch:noop")])
-        all_wa = {"wa_group", "wa_channel"}
-        for val, label in [
-            ("wa_group",   "👥 مجموعات"),
-            ("wa_channel", "📢 قنوات"),
-        ]:
-            chk = "✅ " if val in wa_types else "⬜ "
-            rows.append([InlineKeyboardButton(
-                text=f"{chk}{label}", callback_data=f"srch:toggle_wa:{val}"
-            )])
-        wa_all_chk = "☑️" if all_wa.issubset(wa_types) else "⬜"
-        rows.append([InlineKeyboardButton(
-            text=f"{wa_all_chk} كل أنواع WhatsApp", callback_data="srch:wa_all"
-        )])
+    for key, label in types_to_show:
+        tick = "✅" if selected.get(key, True) else "☐"
+        rows.append([InlineKeyboardButton(text=f"{tick} {label}", callback_data=f"s:lt:t:{key}")])
 
     rows.append([
-        InlineKeyboardButton(text="⬅️ السابق", callback_data="srch:go:platform"),
-        InlineKeyboardButton(text="التالي ➡️", callback_data="srch:go:depth"),
+        InlineKeyboardButton(text="⬅️ رجوع",  callback_data="s:bk:2"),
+        InlineKeyboardButton(text="التالي ➡️", callback_data="s:lt:nx"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── wizard step 4: search depth ────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Step 4 — Depth
+# ──────────────────────────────────────────────────────────────────────────
 
-def depth_kb(selected: str = "normal") -> InlineKeyboardMarkup:
-    def dot(v): return "🔵 " if selected == v else "⚪ "
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text=f"{dot('fast')}⚡ سريع — سرعة أعلى ونطاق أقل",
-            callback_data="srch:set_depth:fast",
-        )],
-        [InlineKeyboardButton(
-            text=f"{dot('normal')}🔎 عادي — توازن بين السرعة والشمول",
-            callback_data="srch:set_depth:normal",
-        )],
-        [InlineKeyboardButton(
-            text=f"{dot('deep')}🧠 عميق — أوسع وأكثر شمولاً (يستغرق وقتاً أطول)",
-            callback_data="srch:set_depth:deep",
-        )],
-        [
-            InlineKeyboardButton(text="⬅️ السابق", callback_data="srch:go:link_types"),
-            InlineKeyboardButton(text="التالي ➡️", callback_data="srch:go:timerange"),
-        ],
-    ])
+_DEPTHS = [
+    ("fa", "⚡ بحث سريع    — نطاق أقل، سرعة أعلى"),
+    ("no", "🔎 بحث عادي   — توازن بين السرعة والشمول"),
+    ("de", "🧠 بحث عميق   — أوسع نطاقاً، يستغرق وقتاً أطول"),
+]
 
 
-# ── wizard step 5: time range ──────────────────────────────────────────
-
-def timerange_kb(selected: str = "month") -> InlineKeyboardMarkup:
-    def dot(v): return "🔵 " if selected == v else "⚪ "
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{dot('today')}📅 آخر يوم",    callback_data="srch:set_tr:today")],
-        [InlineKeyboardButton(text=f"{dot('week')}📅 آخر أسبوع",  callback_data="srch:set_tr:week")],
-        [InlineKeyboardButton(text=f"{dot('month')}📅 آخر شهر",    callback_data="srch:set_tr:month")],
-        [InlineKeyboardButton(text=f"{dot('year')}📅 آخر سنة",    callback_data="srch:set_tr:year")],
-        [InlineKeyboardButton(text=f"{dot('custom')}📅 تحديد يدوي", callback_data="srch:set_tr:custom")],
-        [
-            InlineKeyboardButton(text="⬅️ السابق", callback_data="srch:go:depth"),
-            InlineKeyboardButton(text="التالي ➡️", callback_data="srch:go:max_results"),
-        ],
-    ])
-
-
-# ── wizard step 6: max results ─────────────────────────────────────────
-
-def max_results_kb(selected: int = 1000) -> InlineKeyboardMarkup:
-    def dot(v): return "🔵 " if selected == v else "⚪ "
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=f"{dot(100)}📊 100",       callback_data="srch:set_max:100"),
-            InlineKeyboardButton(text=f"{dot(500)}📊 500",       callback_data="srch:set_max:500"),
-        ],
-        [
-            InlineKeyboardButton(text=f"{dot(1000)}📊 1000",     callback_data="srch:set_max:1000"),
-            InlineKeyboardButton(text=f"{dot(0)}📊 بدون حد",     callback_data="srch:set_max:0"),
-        ],
-        [
-            InlineKeyboardButton(text="⬅️ السابق", callback_data="srch:go:timerange"),
-            InlineKeyboardButton(text="تأكيد ✅",  callback_data="srch:confirm"),
-        ],
-    ])
-
-
-# ── step 7: confirmation ───────────────────────────────────────────────
-
-def confirm_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🚀 بدء البحث", callback_data="srch:do_start"),
-            InlineKeyboardButton(text="❌ إلغاء",      callback_data="srch:cancel"),
-        ]
-    ])
-
-
-# ── running job ────────────────────────────────────────────────────────
-
-def running_kb(job_id: int, paused: bool = False) -> InlineKeyboardMarkup:
-    if paused:
-        row = [
-            InlineKeyboardButton(text="▶️ استمرار",      callback_data=f"srch:resume:{job_id}"),
-            InlineKeyboardButton(text="⏹️ إيقاف",        callback_data=f"srch:stop:{job_id}"),
-        ]
-    else:
-        row = [
-            InlineKeyboardButton(text="⏸️ إيقاف مؤقت", callback_data=f"srch:pause:{job_id}"),
-            InlineKeyboardButton(text="⏹️ إيقاف",       callback_data=f"srch:stop:{job_id}"),
-        ]
-    return InlineKeyboardMarkup(inline_keyboard=[row])
-
-
-# ── history ────────────────────────────────────────────────────────────
-
-def history_kb(jobs: list) -> InlineKeyboardMarkup:
+def depth_keyboard(selected: str) -> InlineKeyboardMarkup:
     rows = []
-    STATUS_ICONS = {
-        "completed": "✅", "running": "🟡", "paused": "🟠",
-        "failed": "🔴", "cancelled": "⚪", "pending": "🔵",
-    }
-    for job in jobs:
-        icon  = STATUS_ICONS.get(job.status, "❓")
-        dt    = job.created_at.strftime("%m/%d %H:%M") if job.created_at else "—"
-        label = f"{icon} #{job.id} | {dt} | جديدة:{job.new_count} ♻️:{job.duplicate_count}"
-        rows.append([
-            InlineKeyboardButton(text=label, callback_data=f"srch:view:{job.id}")
-        ])
+    for val, label in _DEPTHS:
+        tick = "🔘" if selected == val else "⚪"
+        rows.append([InlineKeyboardButton(text=f"{tick} {label}", callback_data=f"s:dp:{val}")])
+
     rows.append([
-        InlineKeyboardButton(text="🔍 بحث جديد", callback_data="srch:new"),
-        InlineKeyboardButton(text="⬅️ رجوع",     callback_data="menu:search"),
+        InlineKeyboardButton(text="⬅️ رجوع",  callback_data="s:bk:3"),
+        InlineKeyboardButton(text="التالي ➡️", callback_data="s:dp:nx"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-# ── job detail ─────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────
+# Step 5 — Time period
+# ──────────────────────────────────────────────────────────────────────────
 
-def job_detail_kb(job_id: int) -> InlineKeyboardMarkup:
+_PERIODS = [
+    ("dy", "📅 آخر يوم"),
+    ("wk", "📅 آخر أسبوع"),
+    ("mn", "📅 آخر شهر"),
+    ("yr", "📅 آخر سنة"),
+    ("cu", "📅 تحديد تاريخ يدوي"),
+]
+
+
+def period_keyboard(selected: str) -> InlineKeyboardMarkup:
+    rows = []
+    for val, label in _PERIODS:
+        tick = "🔘" if selected == val else "⚪"
+        rows.append([InlineKeyboardButton(text=f"{tick} {label}", callback_data=f"s:pd:{val}")])
+
+    rows.append([
+        InlineKeyboardButton(text="⬅️ رجوع",  callback_data="s:bk:4"),
+        InlineKeyboardButton(text="التالي ➡️", callback_data="s:pd:nx"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Step 6 — Confirmation
+# ──────────────────────────────────────────────────────────────────────────
+
+def confirm_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📥 Telegram", callback_data=f"srch:export_tg:{job_id}"),
-            InlineKeyboardButton(text="📥 WhatsApp",  callback_data=f"srch:export_wa:{job_id}"),
+            InlineKeyboardButton(text="⬅️ رجوع",       callback_data="s:bk:5"),
+            InlineKeyboardButton(text="🚀 بدء البحث",   callback_data="s:cf"),
         ],
+        [InlineKeyboardButton(text="❌ إلغاء",           callback_data="s:cx")],
+    ])
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Running controls
+# ──────────────────────────────────────────────────────────────────────────
+
+def running_keyboard(job_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📥 الكل CSV",  callback_data=f"srch:export_all:{job_id}"),
+            InlineKeyboardButton(text="⏸️ إيقاف مؤقت", callback_data=f"s:ps:{job_id}"),
+            InlineKeyboardButton(text="⏹️ إيقاف",       callback_data=f"s:st:{job_id}"),
         ],
+    ])
+
+
+def paused_keyboard(job_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="⬅️ السجل",    callback_data="srch:history"),
-            InlineKeyboardButton(text="🔍 بحث جديد", callback_data="srch:new"),
+            InlineKeyboardButton(text="▶️ استمرار",  callback_data=f"s:rs:{job_id}"),
+            InlineKeyboardButton(text="⏹️ إيقاف",    callback_data=f"s:st:{job_id}"),
         ],
+    ])
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Results / export
+# ──────────────────────────────────────────────────────────────────────────
+
+def results_keyboard(job_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📥 روابط Telegram", callback_data=f"s:ex:tg:{job_id}"),
+            InlineKeyboardButton(text="📥 روابط WhatsApp",  callback_data=f"s:ex:wa:{job_id}"),
+        ],
+        [InlineKeyboardButton(text="📥 تحميل الكل (CSV)",   callback_data=f"s:ex:al:{job_id}")],
+        [InlineKeyboardButton(text="🏠 القائمة الرئيسية",    callback_data="back:main")],
     ])

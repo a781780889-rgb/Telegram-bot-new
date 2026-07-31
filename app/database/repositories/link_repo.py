@@ -1,187 +1,179 @@
-"""Repository for Link and DuplicateLink models.
-
-save_link() is the critical path: it must never insert a duplicate
-and must handle race conditions from concurrent workers.
 """
+LinkRepository — insert links with duplicate detection at the DB layer.
+"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, desc, func, select, update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database.models.search_models import DuplicateLink, Link
+from app.database.models.search import (
+    DiscoveredLink,
+    DuplicateRecord,
+    LinkPlatform,
+    LinkStatus,
+    LinkType,
+)
 
 
 class LinkRepository:
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    # ──────────────────────────────────────────────────────────────
-    # Core insert with dedup
-    # ──────────────────────────────────────────────────────────────
-    async def save_link(
+    # ── insert new / record duplicate ────────────────────────────────────
+
+    async def upsert_link(
         self,
-        platform: str,
-        link_type: str,
+        *,
+        platform: LinkPlatform,
+        link_type: LinkType,
         original_url: str,
         normalized_url: str,
         url_hash: str,
-        search_job_id: Optional[int] = None,
+        search_id: Optional[int] = None,
         source_account_id: Optional[int] = None,
+        source: Optional[str] = None,
+        title: Optional[str] = None,
         username: Optional[str] = None,
-        invite_code: Optional[str] = None,
-        source_context: Optional[str] = None,
-    ) -> tuple[Link, bool]:
+        metadata: Optional[dict] = None,
+    ) -> Tuple[bool, DiscoveredLink]:
         """
-        Returns (link, is_new).
-        If the (platform, url_hash) pair already exists the existing
-        record is returned with is_new=False.
-        Handles the race-condition case via IntegrityError catch.
-        """
-        # ── 1. optimistic read ────────────────────────────────────
-        existing = await self._get_by_hash(platform, url_hash)
-        if existing:
-            # Bump last_seen / seen_count
-            await self.db.execute(
-                update(Link)
-                .where(Link.id == existing.id)
-                .values(
-                    last_seen_at=datetime.now(timezone.utc),
-                    seen_count=Link.seen_count + 1,
-                )
-            )
-            await self.db.commit()
-            return existing, False
+        Try to insert a new link.
+        Returns (is_new, link_object).
 
-        # ── 2. attempt insert ─────────────────────────────────────
-        link = Link(
+        If a link with the same (platform, url_hash) already exists:
+          - records a DuplicateRecord
+          - returns (False, existing_link)
+
+        Uses the DB UNIQUE constraint as the ultimate guard, so even
+        two concurrent workers cannot produce duplicates.
+        """
+        # 1. Application-level check (avoids a round-trip on the hot path)
+        existing = await self.get_by_hash(platform, url_hash)
+        if existing is not None:
+            await self._record_duplicate(
+                existing_link=existing,
+                original_url=original_url,
+                normalized_url=normalized_url,
+                url_hash=url_hash,
+                platform=platform,
+                search_id=search_id,
+                source_account_id=source_account_id,
+                source=source,
+            )
+            return False, existing
+
+        # 2. Attempt insert — the DB UNIQUE constraint catches races
+        link = DiscoveredLink(
             platform=platform,
             link_type=link_type,
             original_url=original_url,
             normalized_url=normalized_url,
             url_hash=url_hash,
-            search_job_id=search_job_id,
+            search_id=search_id,
             source_account_id=source_account_id,
+            source=source,
+            title=title,
             username=username,
-            invite_code=invite_code,
-            source_context=(source_context or "")[:500],
-            status="unknown",
+            metadata_json=metadata,
+            status=LinkStatus.VALID,
         )
+        self.db.add(link)
         try:
-            self.db.add(link)
             await self.db.commit()
             await self.db.refresh(link)
-            return link, True
-
+            return True, link
         except IntegrityError:
-            # ── 3. concurrent insert won the race; fetch theirs ───
             await self.db.rollback()
-            existing = await self._get_by_hash(platform, url_hash)
+            # Someone else inserted the same hash concurrently
+            existing = await self.get_by_hash(platform, url_hash)
             if existing:
-                return existing, False
-            raise  # Should never reach here
+                await self._record_duplicate(
+                    existing_link=existing,
+                    original_url=original_url,
+                    normalized_url=normalized_url,
+                    url_hash=url_hash,
+                    platform=platform,
+                    search_id=search_id,
+                    source_account_id=source_account_id,
+                    source=source,
+                )
+                return False, existing
+            raise  # Unexpected — re-raise
 
-    # ──────────────────────────────────────────────────────────────
-    # Record a duplicate occurrence
-    # ──────────────────────────────────────────────────────────────
-    async def record_duplicate(
+    async def _record_duplicate(
         self,
+        *,
+        existing_link: DiscoveredLink,
         original_url: str,
         normalized_url: str,
         url_hash: str,
-        platform: str,
-        existing_link_id: int,
-        search_job_id: Optional[int] = None,
-        source_account_id: Optional[int] = None,
-    ) -> DuplicateLink:
-        dup = DuplicateLink(
+        platform: LinkPlatform,
+        search_id: Optional[int],
+        source_account_id: Optional[int],
+        source: Optional[str],
+    ) -> None:
+        rec = DuplicateRecord(
             original_url=original_url,
             normalized_url=normalized_url,
             url_hash=url_hash,
             platform=platform,
-            existing_link_id=existing_link_id,
-            search_job_id=search_job_id,
+            search_id=search_id,
+            existing_link_id=existing_link.id,
             source_account_id=source_account_id,
+            source=source,
         )
-        self.db.add(dup)
+        self.db.add(rec)
         await self.db.commit()
-        return dup
 
-    # ──────────────────────────────────────────────────────────────
-    # Reads
-    # ──────────────────────────────────────────────────────────────
-    async def _get_by_hash(self, platform: str, url_hash: str) -> Optional[Link]:
+    # ── fetch ────────────────────────────────────────────────────────────
+
+    async def get_by_hash(
+        self, platform: LinkPlatform, url_hash: str
+    ) -> Optional[DiscoveredLink]:
         result = await self.db.execute(
-            select(Link).where(
-                and_(
-                    Link.platform == platform,
-                    Link.url_hash == url_hash,
-                    Link.is_deleted.is_(False),
-                )
+            select(DiscoveredLink).where(
+                DiscoveredLink.platform == platform,
+                DiscoveredLink.url_hash == url_hash,
             )
         )
         return result.scalar_one_or_none()
 
-    async def list_by_job(
-        self,
-        job_id: int,
-        platform: Optional[str] = None,
-        limit: int = 1000,
-        offset: int = 0,
-    ) -> list[Link]:
-        q = select(Link).where(
-            Link.search_job_id == job_id,
-            Link.is_deleted.is_(False),
-        )
-        if platform:
-            q = q.where(Link.platform == platform)
-        q = q.order_by(Link.first_seen_at).limit(limit).offset(offset)
+    async def list_by_search(
+        self, search_id: int, *, new_only: bool = False, limit: int = 5000
+    ) -> List[DiscoveredLink]:
+        q = select(DiscoveredLink).where(DiscoveredLink.search_id == search_id)
+        if new_only:
+            q = q.where(DiscoveredLink.is_duplicate == False)  # noqa: E712
+        q = q.order_by(DiscoveredLink.created_at.asc()).limit(limit)
         result = await self.db.execute(q)
         return list(result.scalars().all())
 
-    async def export_urls(
-        self, job_id: int, platform: Optional[str] = None
-    ) -> list[str]:
-        """Return only the normalized URL strings for export files."""
-        q = select(Link.normalized_url).where(
-            Link.search_job_id == job_id,
-            Link.is_deleted.is_(False),
-        )
-        if platform:
-            q = q.where(Link.platform == platform)
-        q = q.order_by(Link.first_seen_at)
-        result = await self.db.execute(q)
-        return [row[0] for row in result.all()]
-
-    async def count_by_job(
-        self, job_id: int, platform: Optional[str] = None
-    ) -> int:
-        q = select(func.count(Link.id)).where(
-            Link.search_job_id == job_id,
-            Link.is_deleted.is_(False),
-        )
-        if platform:
-            q = q.where(Link.platform == platform)
-        return (await self.db.scalar(q)) or 0
-
-    async def get_user_link_stats(self, user_id: int) -> dict:
-        """Total links stats for a user across all jobs."""
-        from app.database.models.search_models import SearchJob
-
-        def _count(platform: str):
-            return (
-                select(func.count(Link.id))
-                .join(SearchJob, Link.search_job_id == SearchJob.id)
-                .where(
-                    SearchJob.user_id == user_id,
-                    Link.platform == platform,
-                    Link.is_deleted.is_(False),
-                )
+    async def list_by_search_and_platform(
+        self, search_id: int, platform: LinkPlatform, *, new_only: bool = True
+    ) -> List[DiscoveredLink]:
+        q = (
+            select(DiscoveredLink)
+            .where(
+                DiscoveredLink.search_id == search_id,
+                DiscoveredLink.platform == platform,
             )
+            .order_by(DiscoveredLink.created_at.asc())
+        )
+        if new_only:
+            q = q.where(DiscoveredLink.is_duplicate == False)  # noqa: E712
+        result = await self.db.execute(q)
+        return list(result.scalars().all())
 
-        tg = (await self.db.scalar(_count("telegram"))) or 0
-        wa = (await self.db.scalar(_count("whatsapp"))) or 0
-        return {"total": tg + wa, "telegram": tg, "whatsapp": wa}
+    async def count_duplicates_for_search(self, search_id: int) -> int:
+        from sqlalchemy import func as sqlfunc
+
+        result = await self.db.scalar(
+            select(sqlfunc.count(DuplicateRecord.id)).where(
+                DuplicateRecord.search_id == search_id
+            )
+        )
+        return result or 0
