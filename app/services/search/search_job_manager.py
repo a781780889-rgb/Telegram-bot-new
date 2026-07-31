@@ -118,7 +118,7 @@ class SearchJobManager:
             link_repo    = LinkRepository(db)
             account_repo = AccountRepository(db)
 
-            await search_repo.update_status(job_id, "running")
+            await search_repo.set_running(job_id)
             await search_repo.set_progress_message(job_id, chat_id, msg_id)
 
             job = await search_repo.get_by_id(job_id)
@@ -148,10 +148,7 @@ class SearchJobManager:
                     logger.error(f"[job {job_id}] connect error account {acc_id}: {e}")
 
             if not clients:
-                await search_repo.update_status(
-                    job_id, "failed",
-                    error_message="لا توجد حسابات نشطة ومتصلة لتنفيذ البحث",
-                )
+                await search_repo.set_failed(job_id, "لا توجد حسابات نشطة ومتصلة لتنفيذ البحث")
                 await self._edit_text(
                     chat_id, msg_id,
                     "❌ فشل البحث: لا توجد حسابات نشطة ومتصلة.",
@@ -164,8 +161,8 @@ class SearchJobManager:
             # ── engine + detector ─────────────────────────────────
             engine = SearchEngine(
                 clients=clients,
-                platforms=job.platforms,
-                search_type=job.search_type,
+                platforms=job.platform.value if job.platform else "both",
+                search_type=job.depth.value if job.depth else "normal",
                 date_from=date_from,
                 date_to=date_to,
                 max_results=job.max_results,
@@ -175,6 +172,7 @@ class SearchJobManager:
             detector = DuplicateDetector(job_id=job_id)
 
             # counters (local, flushed to DB in batches + at end)
+            start_time = time.monotonic()
             found = new = dup = inv = tg = wa = 0
             batch_found = batch_new = batch_dup = batch_inv = 0
             batch_tg = batch_wa = 0
@@ -210,9 +208,9 @@ class SearchJobManager:
                     if batch_found >= BATCH:
                         await search_repo.increment_counters(
                             job_id,
-                            found=batch_found, new=batch_new,
+                            total=batch_found, new=batch_new,
                             duplicate=batch_dup, invalid=batch_inv,
-                            tg=batch_tg, wa=batch_wa,
+                            telegram=batch_tg, whatsapp=batch_wa,
                         )
                         batch_found = batch_new = batch_dup = batch_inv = 0
                         batch_tg = batch_wa = 0
@@ -221,10 +219,14 @@ class SearchJobManager:
                     now = time.monotonic()
                     if now - last_upd >= _PROGRESS_INTERVAL:
                         last_upd = now
+                        elapsed_t = now - start_time
+                        speed_t = found / max(elapsed_t, 1)
                         await self._edit_progress(
                             chat_id, msg_id, job_id,
                             found, new, dup, inv, tg, wa,
                             paused=not ctrl.pause_event.is_set(),
+                            elapsed=elapsed_t,
+                            speed=speed_t,
                         )
 
                 # flush remainder
@@ -237,7 +239,10 @@ class SearchJobManager:
                     )
 
                 final_status = "cancelled" if ctrl.stop_event.is_set() else "completed"
-                await search_repo.update_status(job_id, final_status)
+                if final_status == "cancelled":
+                    await search_repo.set_cancelled(job_id)
+                else:
+                    await search_repo.set_completed(job_id)
                 await self._edit_done(
                     chat_id, msg_id, job_id,
                     final_status, found, new, dup, inv, tg, wa,
@@ -245,7 +250,7 @@ class SearchJobManager:
 
             except Exception as e:
                 logger.exception(f"[job {job_id}] fatal error: {e}")
-                await search_repo.update_status(job_id, "failed", error_message=str(e))
+                await search_repo.set_failed(job_id, str(e))
                 await self._edit_text(chat_id, msg_id, f"❌ خطأ: {str(e)[:300]}")
 
             finally:
@@ -258,8 +263,8 @@ class SearchJobManager:
     # ── date resolution ────────────────────────────────────────────────
     @staticmethod
     def _resolve_dates(job) -> tuple[Optional[datetime], Optional[datetime]]:
-        if job.date_from and job.date_to:
-            return job.date_from, job.date_to
+        if job.period_from and job.period_to:
+            return job.period_from, job.period_to
         now = datetime.now(timezone.utc)
         delta_map = {
             "today":  timedelta(days=1),
@@ -267,7 +272,7 @@ class SearchJobManager:
             "month":  timedelta(days=30),
             "year":   timedelta(days=365),
         }
-        delta = delta_map.get(job.date_range or "month", timedelta(days=30))
+        delta = delta_map.get((job.period.value if job.period else None) or "month", timedelta(days=30))
         return now - delta, now
 
     # ── bot message helpers ────────────────────────────────────────────
@@ -284,19 +289,75 @@ class SearchJobManager:
         chat_id: int, msg_id: int, job_id: int,
         found: int, new: int, dup: int, inv: int, tg: int, wa: int,
         paused: bool = False,
+        elapsed: float = 0,
+        current_group: str = "",
+        groups_done: int = 0,
+        groups_total: int = 0,
+        msgs_checked: int = 0,
+        speed: float = 0,
+        log_lines: list = None,
     ) -> None:
         icon  = "⏸️" if paused else "🔴"
         label = "متوقف مؤقتاً" if paused else "يعمل الآن"
-        text = (
-            f"{icon} البحث {label}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 المكتشفة: {found}\n"
-            f"✅ جديدة:     {new}\n"
-            f"♻️ مكررة:     {dup}\n"
-            f"❌ غير صالحة: {inv}\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📱 Telegram: {tg}   💬 WA: {wa}\n"
-        )
+
+        # Progress bar
+        pct = int(found / max(found + 1, 1) * 100)
+        if groups_total > 0:
+            pct = int(groups_done / groups_total * 100)
+        bar_filled = int(pct / 10)
+        bar = "█" * bar_filled + "░" * (10 - bar_filled)
+
+        # Time
+        h = int(elapsed) // 3600
+        m = (int(elapsed) % 3600) // 60
+        s = int(elapsed) % 60
+        elapsed_str = f"{h:02d}:{m:02d}:{s:02d}"
+
+        # ETA
+        eta_str = "—"
+        if groups_done > 0 and groups_total > 0 and elapsed > 0:
+            avg_per_group = elapsed / groups_done
+            remaining = (groups_total - groups_done) * avg_per_group
+            er = int(remaining)
+            eta_str = f"{er//3600:02d}:{(er%3600)//60:02d}:{er%60:02d}"
+
+        # Duplicate %
+        dup_pct = round(dup / max(found, 1) * 100)
+
+        text_parts = [
+            f"{icon} البحث {label} — #JOB{job_id}",
+            f"[{bar}] {pct}%",
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"⏱️ المدة: {elapsed_str}   ⏳ المتبقي: {eta_str}",
+            f"⚡ السرعة: {speed:.1f} رابط/ث",
+        ]
+
+        if groups_total > 0:
+            text_parts += [
+                "━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"📂 المجموعات: {groups_done}/{groups_total}",
+            ]
+        if current_group:
+            text_parts.append(f"🔍 الحالية: {current_group}")
+        if msgs_checked > 0:
+            text_parts.append(f"💬 الرسائل المفحوصة: {msgs_checked:,}")
+
+        text_parts += [
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"📊 المكتشفة:  {found:,}",
+            f"✅ جديدة:     {new:,}",
+            f"♻️ مكررة:     {dup:,}  ({dup_pct}%)",
+            f"❌ غير صالحة: {inv:,}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"📱 Telegram: {tg:,}   💬 WA: {wa:,}",
+        ]
+
+        if log_lines:
+            text_parts.append("━━━━━━━━━━━━━━━━━━━━━━━━")
+            text_parts.append("📋 آخر العمليات:")
+            text_parts += log_lines[-5:]
+
+        text = "\n".join(text_parts)
         kb = self._running_kb(job_id, paused)
         if not self._bot:
             return

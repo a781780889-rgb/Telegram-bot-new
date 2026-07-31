@@ -184,3 +184,79 @@ async def _finish_login(message: types.Message, state: FSMContext, user_id: int)
 
     await state.clear()
     await message.answer(f"✅ تم تسجيل الدخول وحفظ الحساب بنجاح.\n📱 {phone}")
+
+
+# ── قائمة الحسابات ─────────────────────────────────────────────────────────
+@router.callback_query(F.data == "accounts:list")
+async def list_accounts(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    async with AsyncSessionLocal() as db:
+        repo = AccountRepository(db)
+        accounts = await repo.list_by_user(user_id)
+
+    if not accounts:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ إضافة حساب", callback_data="accounts:add")],
+            [InlineKeyboardButton(text="⬅️ رجوع", callback_data="menu:accounts")],
+        ])
+        await callback.message.edit_text("📋 لا توجد حسابات مضافة بعد.", reply_markup=kb)
+        await callback.answer()
+        return
+
+    lines = ["📋 حساباتي\n━━━━━━━━━━━━━━━━━━"]
+    buttons = []
+    for acc in accounts:
+        status = "✅" if acc.is_active else "❌"
+        lines.append(f"{status} {acc.phone}")
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{'✅' if acc.is_active else '❌'} {acc.phone}",
+                callback_data=f"accounts:detail:{acc.id}"
+            )
+        ])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ رجوع", callback_data="menu:accounts")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await callback.message.edit_text("\n".join(lines), reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("accounts:detail:"))
+async def account_detail(callback: types.CallbackQuery):
+    acc_id = int(callback.data.split(":")[-1])
+    async with AsyncSessionLocal() as db:
+        repo = AccountRepository(db)
+        acc = await repo.get_by_id(acc_id)
+
+    if not acc:
+        await callback.answer("⚠️ الحساب غير موجود", show_alert=True)
+        return
+
+    status = "✅ نشط" if acc.is_active else "❌ غير نشط"
+    text = (
+        f"📱 تفاصيل الحساب\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📞 الرقم:   {acc.phone}\n"
+        f"🔑 Session: {acc.session_name or '—'}\n"
+        f"📊 الحالة:  {status}\n"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🗑️ حذف الحساب", callback_data=f"accounts:delete:{acc_id}")],
+        [InlineKeyboardButton(text="⬅️ رجوع", callback_data="accounts:list")],
+    ])
+    await callback.message.edit_text(text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("accounts:delete:"))
+async def delete_account(callback: types.CallbackQuery):
+    acc_id = int(callback.data.split(":")[-1])
+    async with AsyncSessionLocal() as db:
+        repo = AccountRepository(db)
+        acc = await repo.get_by_id(acc_id)
+        if acc:
+            await db.delete(acc)
+            await db.commit()
+    await callback.answer("✅ تم حذف الحساب", show_alert=True)
+    # Go back to list
+    await list_accounts(callback)
