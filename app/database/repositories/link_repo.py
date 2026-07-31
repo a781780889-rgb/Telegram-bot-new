@@ -185,3 +185,28 @@ class LinkRepository:
         tg = (await self.db.scalar(_count("telegram"))) or 0
         wa = (await self.db.scalar(_count("whatsapp"))) or 0
         return {"total": tg + wa, "telegram": tg, "whatsapp": wa}
+
+    async def upsert_link(
+        self,
+        platform,
+        link_type,
+        original_url: str,
+        normalized_url: str,
+        url_hash: str,
+        search_id: int | None = None,
+        source_account_id: int | None = None,
+        source: str | None = None,
+        username: str | None = None,
+    ) -> tuple:
+        """Alias used by engine.py — delegates to save_link."""
+        link, is_new = await self.save_link(
+            platform=platform,
+            link_type=link_type,
+            original_url=original_url,
+            normalized_url=normalized_url,
+            url_hash=url_hash,
+            search_job_id=search_id,
+            source_account_id=source_account_id,
+            username=username,
+        )
+        return is_new, link

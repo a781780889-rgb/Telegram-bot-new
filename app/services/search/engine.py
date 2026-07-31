@@ -33,7 +33,7 @@ from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 
 from app.database.database import AsyncSessionLocal
-from app.database.models.search import (
+from app.database.models.search_models import (
     LinkPlatform,
     LinkStatus,
     SearchPlatform,
